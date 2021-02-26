@@ -169,6 +169,7 @@ def parse_args():
     parser.add_argument("--max_position_embeddings", type=int, default=4096)
     parser.add_argument("--type_vocab_size", type=int, default=2)
     parser.add_argument("--data_file", type=str, default="train.csv")
+    parser.add_argument("--ckpt_path", type=str, default="")
     args = parser.parse_args()
     return args
 
@@ -376,7 +377,10 @@ def do_train(args):
     model = BigBirdForPretraining(
         BigBirdModel(**BigBirdForPretraining.pretrained_init_configuration[
             args.model_name_or_path]))
-
+    if os.path.exists(args.ckpt_path):
+        logger.info("load ckpt")
+        state_dict = paddle.load(args.ckpt_path)
+        model.set_state_dict(state_dict)
     # define metric
     criterion = BigBirdPretrainingCriterion(
         getattr(model, BigBirdForPretraining.base_model_prefix).config[
@@ -405,12 +409,35 @@ def do_train(args):
     global_steps = 0
     seed = 0
     np.random.seed(seed)
+    loss_list = []
     for epoch in range(args.epochs):
         if global_steps > args.num_train_steps:
             break
-        for step, batch in enumerate(train_data_loader):
-            (input_ids, segment_ids, masked_lm_positions, masked_lm_ids,
-             masked_lm_weights, next_sentence_labels, masked_lm_scale) = batch
+        # read numpy data
+        np_data = np.load('wiki1000.npz')
+        total_num = len(np_data['input_ids'])
+        for step in range(total_num):
+            input_ids = paddle.to_tensor(np_data['input_ids'][step])
+            segment_ids = paddle.to_tensor(np_data['segment_ids'][step])
+            masked_lm_positions = paddle.to_tensor(np_data[
+                'masked_lm_positions'][step].flatten())
+            masked_lm_ids = np.array(
+                np_data['masked_lm_ids'][step], dtype=np.int64)
+            masked_lm_ids = paddle.to_tensor(
+                np.transpose(masked_lm_ids, [1, 0]))
+            masked_lm_weights = paddle.to_tensor(np_data['masked_lm_weights'][
+                step])
+            next_sentence_labels = paddle.to_tensor(np_data[
+                'next_sentence_labels'][step])
+            masked_lm_scale = 1
+            # if step == 72:
+            #     logger.info("{}\n{}\n{}\n{}\n{}\n{}\n".format(
+            #         input_ids, segment_ids, masked_lm_positions, masked_lm_ids,
+            #         masked_lm_weights, next_sentence_labels))
+            # for step, batch in enumerate(train_data_loader):
+            #     (input_ids, segment_ids, masked_lm_positions, masked_lm_ids,
+            #      masked_lm_weights, next_sentence_labels, masked_lm_scale) = batch
+            #print(batch)
             seq_len = input_ids.shape[1]
             # rand_mask_idx_list = create_bigbird_rand_mask_idx_list(
             #     bigbirdConfig["num_layers"], seq_len, seq_len,
@@ -424,21 +451,24 @@ def do_train(args):
                 token_type_ids=segment_ids,
                 rand_mask_idx_list=rand_mask_idx_list,
                 masked_positions=masked_lm_positions)
+            #print(masked_lm_ids.shape,flush=True)
             loss = criterion(prediction_scores, seq_relationship_score,
                              masked_lm_ids, next_sentence_labels,
                              masked_lm_scale, masked_lm_weights)
             loss.backward()
-            #optimizer.step()
+            optimizer.step()
             optimizer.clear_gradients()
             if global_steps % args.logging_steps == 0:
-                logger.info(batch)
                 logger.info("global step %d, epoch: %d, loss: %f" %
                             (global_steps, epoch, loss))
+            loss_list.append(loss.numpy())
 
             global_steps += 1
             if global_steps > args.num_train_steps:
                 break
             np.random.seed(seed)
+
+    np.save("paddle_loss_np.npy", loss_list)
 
 
 if __name__ == "__main__":
