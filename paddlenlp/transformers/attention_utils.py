@@ -476,8 +476,8 @@ class BigBirdSparseAttention(Attention):
         for query_block_id in range(GF, GF + W // 2):
             left_block_id = query_block_id - W // 2
             right_block_id = query_block_id + W // 2
-            zero_key_mask = blocked_key_mask[:, -(W - (right_block_id + 1 - G)):
-                                             -GB] * 0
+            zero_key_mask = paddle.zeros_like(blocked_key_mask[:, -(W - (
+                right_block_id + 1 - G)):-GB])
             temp_key_mask = paddle.concat(
                 [blocked_key_mask[:, GF:(right_block_id + 1)], zero_key_mask],
                 axis=1)
@@ -485,6 +485,7 @@ class BigBirdSparseAttention(Attention):
             key_mask_list.append(temp_key_mask)
         roll_key_mask1 = paddle.concat(key_mask_list, axis=1)
         roll_key_mask1 = paddle.reshape(roll_key_mask1, [0, 0, W * bs])
+
         key_mask_list = []
 
         band_length = L - G - W // 2 * 2
@@ -500,8 +501,8 @@ class BigBirdSparseAttention(Attention):
         for query_block_id in range((L - GB) - W // 2, L - GB):
             left_block_id = query_block_id - W // 2
             right_block_id = query_block_id + W // 2
-            zero_key_mask = blocked_key_mask[:, GF:GF + W - (L - left_block_id -
-                                                             GB)] * 0
+            zero_key_mask = paddle.zeros_like(blocked_key_mask[:, GF:GF + W - (
+                L - left_block_id - GB)])
             temp_key_mask = paddle.concat(
                 [zero_key_mask, blocked_key_mask[:, left_block_id:-GB]], axis=1)
             temp_key_mask = paddle.unsqueeze(temp_key_mask, 1)
@@ -593,7 +594,6 @@ class BigBirdSparseAttention(Attention):
                 temp_blocked_matrix_list, axis=2)
             temp_blocked_matrix = paddle.unsqueeze(temp_blocked_matrix, axis=2)
             blocked_list.append(temp_blocked_matrix)
-
         band_matrix = paddle.concat(blocked_list, axis=2)
         band_matrix = paddle.reshape(band_matrix,
                                      [B, H, L - G, (G + W) * bs, -1])
@@ -685,6 +685,15 @@ class BigBirdSparseAttention(Attention):
         global_product = paddle.matmul(global_weights, value_matrix)
         return global_product
 
+    def _get_splited_matrix(self, matrix):
+        GB = self.num_global_blocks_back
+        GF = self.num_global_blocks_front
+        return matrix[:, :, 0:GF], matrix[:, :, GF:-GB], matrix[:, :, -GB:]
+
+    def _get_partial_attn_weights(query_matrix, key_matrix):
+        top_query_matrix, middle_query_matrix, bottom_query_matrix = \
+            self._get_splited_matrix(query_matrix)
+
     def forward(self,
                 query_matrix,
                 key_matrix,
@@ -708,6 +717,7 @@ class BigBirdSparseAttention(Attention):
             key_matrix分为4块：
             
         '''
+
         B = query_matrix.shape[0]  # batch_size
         H = self.num_heads
         T = query_matrix.shape[2]  # sequence_length
@@ -760,30 +770,87 @@ class BigBirdSparseAttention(Attention):
 
         # [B, H, L - G, bs, -1]
         second_query_matrix = blocked_query_matrix[:, :, GF:-GB]
-        # [B, H, L - G, (G+W+R)*bs, -1]
-        # second_key_matrix = paddle.concat(
-        #     [band_keys_matrix, random_keys], axis=3)
+
+        # # [B, H, L - G, (G+W+R)*bs, -1]
+        # # second_key_matrix = paddle.concat(
+        # #     [band_keys_matrix, random_keys], axis=3)
         second_key_matrix = band_keys_matrix
-        # [B, H, L - G, (G+W+R)*bs, -1]
-        # second_value_matrix = paddle.concat(
-        #     [band_value_matrix, random_values], axis=3)
+
+        # # [B, H, L - G, (G+W+R)*bs, -1]
+        # # second_value_matrix = paddle.concat(
+        # #     [band_value_matrix, random_values], axis=3)
         second_value_matrix = band_value_matrix
 
+        ## debug
         second_product = paddle.matmul(
             second_query_matrix, second_key_matrix, transpose_y=True)
         second_product = second_product * (d_head**-0.5)
         second_product += (1 - second_mask) * -1e6
         second_weights = F.softmax(second_product)
-        if dropout:
-            second_weights = F.dropout(
-                second_weights,
-                dropout,
-                training=self.training,
-                mode="upscale_in_train")
-        # [B, H, L - G, bs, (G+W+R)*bs] *  [B, H, L - G, (G+W+R)*bs, -1] = [B, H, L-G, bs, -1]
-        second_out = paddle.matmul(second_weights, second_value_matrix)
+        second_top_value_matrix, second_middle_value_matrix, second_bottom_value_matrix = \
+            self._get_splited_matrix(second_value_matrix)
+
+        # second_top_query_matrix = second_query_matrix[:,:,0:GF]
+        # second_middle_query_matrix = second_query_matrix[:,:,GF:-GB]
+        # second_bottom_query_matrix = second_query_matrix[:,:,-GB:]
+
+        # second_top_key_matrix = second_key_matrix[:,:,0:GF]
+        # second_middle_key_matrix = second_key_matrix[:,:,GF:-GB]
+        # second_bottom_key_matrix = second_key_matrix[:,:,-GB:]
+
+        # second_top_product = paddle.matmul(
+        #     second_top_query_matrix, second_top_key_matrix, transpose_y=True)
+        # second_middle_product = paddle.matmul(
+        #     second_middle_query_matrix, second_middle_key_matrix, transpose_y=True)
+        # second_bottom_product = paddle.matmul(
+        #     second_bottom_query_matrix, second_bottom_key_matrix, transpose_y=True)
+        # second_top_product = second_top_product * (d_head**-0.5)
+        # second_middle_product = second_middle_product * (d_head**-0.5)
+        # second_bottom_product = second_bottom_product * (d_head**-0.5)
+
+        # second_top_product += (1-second_mask[:,:,0:GF]) * -1e6
+        # second_middle_product += (1-second_mask[:,:,GF:-GB]) * -1e6
+        # second_bottom_product += (1-second_mask[:,:,-GB:]) * -1e6
+
+        # second_top_weights = F.softmax(second_top_product)
+        # second_middle_weights = F.softmax(second_middle_product)
+        # second_bottom_weights = F.softmax(second_bottom_product)
+        second_top_weights = second_weights[:, :, 0:GF]
+        second_middle_weights = second_weights[:, :, GF:-GB]
+        second_bottom_weights = second_weights[:, :, -GB:]
+
+        second_top_out = paddle.matmul(second_top_weights,
+                                       second_top_value_matrix)
+        second_middle_out = paddle.matmul(
+            second_middle_weights[:, :, :, :, GF * bs:-GB * bs],
+            second_middle_value_matrix[:, :, :, GF * bs:-GB * bs, :])
+        second_middle_out += paddle.matmul(
+            second_middle_weights[:, :, :, :, :GF * bs],
+            blocked_value_matrix[:, :, 0:GF])
+        second_middle_out += paddle.matmul(
+            second_middle_weights[:, :, :, :, -GB * bs:],
+            blocked_value_matrix[:, :, -GB:])
+        second_bottom_out = paddle.matmul(second_bottom_weights,
+                                          second_bottom_value_matrix)
+        second_out = paddle.concat(
+            [second_top_out, second_middle_out, second_bottom_out], axis=2)
+
+        # second_product = paddle.matmul(
+        #     second_query_matrix, second_key_matrix, transpose_y=True)
+        # second_product = second_product * (d_head**-0.5)
+        # second_product += (1 - second_mask) * -1e6
+        # second_weights = F.softmax(second_product)
+        # if dropout:
+        #     second_weights = F.dropout(
+        #         second_weights,
+        #         dropout,
+        #         training=self.training,
+        #         mode="upscale_in_train")
+        # # [B, H, L - G, bs, (G+W+R)*bs] *  [B, H, L - G, (G+W+R)*bs, -1] = [B, H, L-G, bs, -1]
+        # second_out = paddle.matmul(second_weights, second_value_matrix)
         second_out = paddle.reshape(second_out, [B, H, (L - G) * bs, -1])
 
+        #        second_out.stop_gradient = True
         # [B, H, T, D]
         out = paddle.concat(
             [global_front_out, second_out, global_back_out], axis=2)
@@ -839,12 +906,22 @@ class MultiHeadAttention(Layer):
             self.head_dim,
             weight_attr,
             bias_attr=bias_attr)
+
         self.out_proj = nn.Linear(
             embed_dim, embed_dim, weight_attr, bias_attr=bias_attr)
 
         self.attn_impl = AttentionRegistry.cls_dict[attention_type](
             num_heads, block_size, window_size, num_global_blocks,
             num_rand_blocks, seed)
+
+        # self.q_proj.weight.stop_gradient = True
+        # self.q_proj.bias.stop_gradient = True
+        # self.k_proj.weight.stop_gradient = True
+        # self.k_proj.bias.stop_gradient = True
+        # self.v_proj.weight.stop_gradient = True
+        # self.v_proj.bias.stop_gradient = True
+        # self.out_proj.weight.stop_gradient = True
+        # self.out_proj.bias.stop_gradient = True
 
     def _prepare_qkv(self, query, key, value, cache=None):
         q = self.q_proj(query)
@@ -916,4 +993,5 @@ class MultiHeadAttention(Layer):
         outs = [out]
         if cache is not None:
             outs.append(cache)
+
         return out if len(outs) == 1 else tuple(outs)

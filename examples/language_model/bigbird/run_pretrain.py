@@ -82,7 +82,7 @@ def parse_args():
         help="Batch size per GPU/CPU for training.", )
     parser.add_argument(
         "--learning_rate",
-        default=5e-5,
+        default=1e-4,
         type=float,
         help="The initial learning rate for Adam.")
     parser.add_argument(
@@ -92,7 +92,7 @@ def parse_args():
         help="Linear warmup over warmup_steps.")
     parser.add_argument(
         "--weight_decay",
-        default=0.0,
+        default=0.01,
         type=float,
         help="Weight decay if we apply some.")
     parser.add_argument(
@@ -220,94 +220,20 @@ class PretrainingDataset(Dataset):
         self.mask_val = mask_val
         self.mask_prob = mask_prob
         self.random_prob = random_prob
-
-    def _pretrain_masking(self, subtokens):
-        end_pos = self.max_encoder_length - 2 + np.random.randint(
-            max(1, len(subtokens) - self.max_encoder_length - 2))
-        start_pos = max(0, end_pos - self.max_encoder_length + 2)
-        subtokens = np.array(subtokens[start_pos:end_pos])
-
-        word_begin_mark = self.word_start_subtoken[subtokens]
-        word_begins_pos = np.flatnonzero(word_begin_mark).astype(np.int32)
-        if word_begins_pos.size == 0:
-            # if no word boundary present, we do not do whole word masking
-            # and we fall back to random masking.
-            word_begins_pos = np.arange(len(subtokens), dtype=np.int32)
-            word_begin_mark = np.logical_not(word_begin_mark)
-        correct_start_pos = word_begins_pos[0]
-        subtokens = subtokens[correct_start_pos:]
-        word_begin_mark = word_begin_mark[correct_start_pos:]
-        word_begins_pos = word_begins_pos - correct_start_pos
-        num_tokens = len(subtokens)
-
-        words = np.split(
-            np.arange(
-                num_tokens, dtype=np.int32), word_begins_pos)[1:]
-        assert len(words) == len(word_begins_pos)
-
-        num_to_predict = min(
-            self.max_predictions_per_seq,
-            max(1, int(round(len(word_begins_pos) * self.masked_lm_prob))))
-        masked_lm_positions = np.concatenate(
-            np.random.choice(
-                np.array(
-                    [[]] + words, dtype=np.object)[1:],
-                num_to_predict,
-                replace=False),
-            0)
-
-        if len(masked_lm_positions) > self.max_predictions_per_seq:
-            masked_lm_positions = masked_lm_positions[:self.
-                                                      max_predictions_per_seq +
-                                                      1]
-            # however last word can cross word boundaries, remove crossing words
-            truncate_masking_at = np.flatnonzero(word_begin_mark[
-                masked_lm_positions])[-1]
-            masked_lm_positions = masked_lm_positions[:truncate_masking_at]
-
-        masked_lm_positions = np.sort(masked_lm_positions)
-        masked_lm_ids = subtokens[masked_lm_positions]
-
-        randomness = np.random.rand(len(masked_lm_positions))
-
-        mask_index = masked_lm_positions[randomness < self.mask_prob]
-        random_index = masked_lm_positions[randomness > (1 - self.random_prob)]
-
-        subtokens[mask_index] = self.mask_val  # id of masked token
-        subtokens[random_index] = np.random.randint(  # ignore special tokens
-            101,
-            self.vocab_size,
-            len(random_index),
-            dtype=np.int32)
-
-        subtokens = np.concatenate([
-            np.array(
-                [self.cls_val], dtype=np.int32), subtokens, np.array(
-                    [self.sep_val], dtype=np.int32)
-        ])
-
-        # pad everything to correct shape
-        pad_inp = self.max_encoder_length - num_tokens - 2
-        subtokens = np.pad(subtokens, [0, pad_inp], "constant")
-
-        pad_out = self.max_predictions_per_seq - len(masked_lm_positions)
-        masked_lm_weights = np.pad(np.ones_like(
-            masked_lm_positions, dtype=np.float32), [0, pad_out],
-                                   "constant")
-        masked_lm_positions = np.pad(masked_lm_positions + 1, [0, pad_out],
-                                     "constant")
-        masked_lm_ids = np.pad(masked_lm_ids, [0, pad_out], "constant")
-
-        return subtokens, masked_lm_positions, masked_lm_ids, masked_lm_weights
+        self.np_data = np.load("wiki1000.npz")
 
     def __getitem__(self, index):
-        # [input_ids, label]
-        line = self.lines[index].rstrip()
-        # numpy_mask
-        subtokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer(line))
-
-        subtokens, masked_lm_positions, masked_lm_ids, masked_lm_weights = \
-                self._pretrain_masking(subtokens)
+        #[input_ids, label]
+        #line = self.lines[index].rstrip()
+        #numpy_mask
+        #subtokens, masked_lm_positions, masked_lm_ids, masked_lm_weights = self.tokenizer.encode(
+        #    line,
+        #    max_seq_len=self.max_encoder_length,
+        #    max_pred_len=self.max_predictions_per_seq)
+        subtokens = self.np_data['input_ids'][index]
+        masked_lm_positions = self.np_data['masked_lm_positions'][index]
+        masked_lm_ids = self.np_data['masked_lm_ids'][index]
+        masked_lm_weights = self.np_data['masked_lm_weights'][index]
         return [
             subtokens, np.zeros_like(subtokens), masked_lm_positions,
             masked_lm_ids, masked_lm_weights, np.zeros(
@@ -315,7 +241,8 @@ class PretrainingDataset(Dataset):
         ]
 
     def __len__(self):
-        return len(self.lines)
+        # print("the data:{}".format(self.np_data["input_ids"].shape[0]))
+        return self.np_data["input_ids"].shape[0]
 
 
 def create_dataloader(input_file, tokenizer, worker_init, batch_size,
@@ -331,21 +258,22 @@ def create_dataloader(input_file, tokenizer, worker_init, batch_size,
         num_fields = len(data[0])
         out = [None] * num_fields
 
-        for i in [0, 1, 4, 5]:
+        for i in [0, 1, 5]:
             out[i] = stack_fn([x[i] for x in data])
         batch_size, seq_length = out[0].shape
         size = num_mask = sum(len(x[2]) for x in data)
-        # if size % 8 != 0:
-        #     size += 8 - (size % 8)
         out[2] = np.full(size, 0, dtype=np.int32)
         # masked_lm_labels
         out[3] = np.full([size, 1], -1, dtype=np.int64)
+        # masked weight
+        out[4] = np.full([size, 1], 0, dtype="float32")
         # # Organize as a 1D tensor for gather or use gather_nd
         mask_token_num = 0
         for i, x in enumerate(data):
             for j, pos in enumerate(x[2]):
                 out[2][mask_token_num] = i * seq_length + pos
                 out[3][mask_token_num] = x[3][j]
+                out[4][mask_token_num] = x[4][j]
                 mask_token_num += 1
         out.append(np.asarray([mask_token_num], dtype=np.float32))
         return out
@@ -358,6 +286,22 @@ def create_dataloader(input_file, tokenizer, worker_init, batch_size,
         #worker_init_fn=worker_init,
         return_list=True)
     return dataloader
+
+
+def process_mask_position(masked_lm_positions, masked_lm_ids):
+
+    batch_size, seq_length = masked_lm_positions.shape
+    out = [None] * 2
+    size = sum(len(x) for x in masked_lm_positions)
+    out[0] = np.full(size, 0, dtype=np.int32)
+    out[1] = np.full([size, 1], -1, dtype=np.int64)
+    mask_token_num = 0
+    for i in range(batch_size):
+        for j, pos in enumerate(masked_lm_positions[i]):
+            out[0][mask_token_num] = i * seq_length + pos
+            out[1][mask_token_num] = masked_lm_ids[i][j]
+            mask_token_num += 1
+    return out
 
 
 def do_train(args):
@@ -392,16 +336,23 @@ def do_train(args):
         args.num_train_steps,
         args.warmup_steps,
         last_epoch=0)
+    lr_scheduler = args.learning_rate
 
-    optimizer = paddle.optimizer.AdamW(
-        learning_rate=lr_scheduler,
-        epsilon=args.adam_epsilon,
-        parameters=model.parameters(),
-        weight_decay=args.weight_decay,
-        apply_decay_param_fun=lambda x: x in [
-            p.name for n, p in model.named_parameters()
-            if not any(nd in n for nd in ["bias", "norm"])
-        ])
+    # optimizer = paddle.optimizer.AdamW(
+    #     learning_rate=lr_scheduler,
+    #     epsilon=args.adam_epsilon,
+    #     parameters=model.parameters(),
+    #     weight_decay=args.weight_decay,
+    #     apply_decay_param_fun=lambda x: x in [
+    #         p.name for n, p in model.named_parameters()
+    #         if not any(nd in n for nd in ["bias", "norm"])
+    #     ])
+    # optimizer = paddle.optimizer.Adam(
+    #     learning_rate=lr_scheduler,
+    #     parameters=model.parameters(),
+    #     epsilon=1e-8)
+    optimizer = paddle.optimizer.SGD(learning_rate=lr_scheduler,
+                                     parameters=model.parameters())
     bigbirdConfig = BigBirdModel.pretrained_init_configuration[
         args.model_name_or_path]
     # training
@@ -410,69 +361,70 @@ def do_train(args):
     seed = 0
     np.random.seed(seed)
     loss_list = []
-    for epoch in range(args.epochs):
-        if global_steps > args.num_train_steps:
-            break
-        # read numpy data
-        np_data = np.load('wiki1000.npz')
-        total_num = len(np_data['input_ids'])
-        for step in range(total_num):
-            input_ids = paddle.to_tensor(np_data['input_ids'][step])
-            segment_ids = paddle.to_tensor(np_data['segment_ids'][step])
-            masked_lm_positions = paddle.to_tensor(np_data[
-                'masked_lm_positions'][step].flatten())
-            masked_lm_ids = np.array(
-                np_data['masked_lm_ids'][step], dtype=np.int64)
-            masked_lm_ids = paddle.to_tensor(
-                np.transpose(masked_lm_ids, [1, 0]))
-            masked_lm_weights = paddle.to_tensor(np_data['masked_lm_weights'][
-                step])
-            next_sentence_labels = paddle.to_tensor(np_data[
-                'next_sentence_labels'][step])
-            masked_lm_scale = 1
-            # if step == 72:
-            #     logger.info("{}\n{}\n{}\n{}\n{}\n{}\n".format(
-            #         input_ids, segment_ids, masked_lm_positions, masked_lm_ids,
-            #         masked_lm_weights, next_sentence_labels))
-            # for step, batch in enumerate(train_data_loader):
-            #     (input_ids, segment_ids, masked_lm_positions, masked_lm_ids,
-            #      masked_lm_weights, next_sentence_labels, masked_lm_scale) = batch
-            #print(batch)
-            seq_len = input_ids.shape[1]
-            # rand_mask_idx_list = create_bigbird_rand_mask_idx_list(
-            #     bigbirdConfig["num_layers"], seq_len, seq_len,
-            #     bigbirdConfig["nhead"], bigbirdConfig["block_size"],
-            #     bigbirdConfig["window_size"],
-            #     bigbirdConfig["num_global_blocks"],
-            #     bigbirdConfig["num_rand_blocks"], bigbirdConfig["seed"])
-            rand_mask_idx_list = None
-            prediction_scores, seq_relationship_score = model(
-                input_ids=input_ids,
-                token_type_ids=segment_ids,
-                rand_mask_idx_list=rand_mask_idx_list,
-                masked_positions=masked_lm_positions)
-            #print(masked_lm_ids.shape,flush=True)
-            loss = criterion(prediction_scores, seq_relationship_score,
-                             masked_lm_ids, next_sentence_labels,
-                             masked_lm_scale, masked_lm_weights)
-            loss.backward()
-            optimizer.step()
-            optimizer.clear_gradients()
-            if global_steps % args.logging_steps == 0:
-                logger.info("global step %d, epoch: %d, loss: %f" %
-                            (global_steps, epoch, loss))
-            loss_list.append(loss.numpy())
-
-            global_steps += 1
-            if global_steps > args.num_train_steps:
+    seq_out_list = []
+    from visualdl import LogWriter
+    with LogWriter(logdir="./vdl_log/paddle_bigbird") as writer:
+        for epoch in range(args.epochs):
+            if global_steps >= args.num_train_steps:
                 break
-            np.random.seed(seed)
+            for step, batch in enumerate(train_data_loader):
+                (input_ids, segment_ids, masked_lm_positions, masked_lm_ids,
+                 masked_lm_weights, next_sentence_labels,
+                 masked_lm_scale) = batch
+                seq_len = input_ids.shape[1]
+
+                # rand_mask_idx_list = create_bigbird_rand_mask_idx_list(
+                #     bigbirdConfig["num_layers"], seq_len, seq_len,
+                #     bigbirdConfig["nhead"], bigbirdConfig["block_size"],
+                #     bigbirdConfig["window_size"],
+                #     bigbirdConfig["num_global_blocks"],
+                #     bigbirdConfig["num_rand_blocks"], bigbirdConfig["seed"])
+                rand_mask_idx_list = None
+                prediction_scores, seq_relationship_score, seq_out = model(
+                    input_ids=input_ids,
+                    token_type_ids=segment_ids,
+                    rand_mask_idx_list=rand_mask_idx_list,
+                    masked_positions=masked_lm_positions)
+                seq_out_list.append(seq_out.numpy())
+                loss = criterion(prediction_scores, seq_relationship_score,
+                                 masked_lm_ids, next_sentence_labels,
+                                 masked_lm_scale, masked_lm_weights)
+                loss.backward()
+                #np.save("pd_embedding_grad.npy", np.array(model.parameters()[0].gradient()))
+                # i=0
+                # for p in model.parameters():
+                #     if p.gradient() is not None:
+                #         np.save("pd_grad_{}.npy".format(i), np.array(p.gradient()))
+                #         abs_sum = np.sum(np.abs(p.gradient()))
+                #         sum = np.sum(p.gradient())
+                #         i+=1
+                #         if i > 3:
+                #             break
+                # print("p.name = seq_out, p.shape = {}, sum = {}, abs_sum = {}".format(
+                #     seq_out.shape, np.sum(seq_out.gradient()), np.sum(np.abs(seq_out.gradient()))), flush=True)
+                optimizer.step()
+                optimizer.clear_gradients()
+                if global_steps % args.logging_steps == 0:
+                    logger.info("global step %d, epoch: %d, loss: %f" %
+                                (global_steps, epoch, loss))
+                loss_list.append(loss.numpy())
+                writer.add_scalar(
+                    tag="loss", step=global_steps, value=loss.numpy()[0])
+
+                global_steps += 1
+                if global_steps >= args.num_train_steps:
+                    break
+                np.random.seed(seed)
+        seq_out_list = np.concatenate(seq_out_list, axis=0)
+        np.save("paddle_seq_out.npy", seq_out_list)
 
     np.save("paddle_loss_np.npy", loss_list)
 
 
 if __name__ == "__main__":
     args = parse_args()
+    import sys
+    np.set_printoptions(threshold=sys.maxsize)
     if args.n_gpu > 1:
         paddle.distributed.spawn(do_train, args=(args, ), nprocs=args.n_gpu)
     else:

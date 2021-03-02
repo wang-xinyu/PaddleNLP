@@ -228,15 +228,15 @@ class TransformerEncoderLayer(Layer):
         src = self.self_attn(src, src, src, src_mask, rand_mask_idx, query_mask,
                              key_mask)
         src = residual + self.dropout1(src)
-        if not self.normalize_before:
-            src = self.norm1(src)
+        # if not self.normalize_before:
+        #     src = self.norm1(src)
         residual = src
         if self.normalize_before:
             src = self.norm2(src)
         src = self.linear2(self.dropout(self.activation(self.linear1(src))))
         src = residual + self.dropout2(src)
-        if not self.normalize_before:
-            src = self.norm2(src)
+        # if not self.normalize_before:
+        #     src = self.norm2(src)
         return src
 
 
@@ -257,8 +257,8 @@ class TransformerEncoder(Layer):
                 query_mask=None,
                 key_mask=None):
         output = src
-        if not self.normalize_before:
-            output = self.norm(output)
+        # if not self.normalize_before:
+        #     output = self.norm(output)
 
         for i, mod in enumerate(self.layers):
             rand_mask_id = None
@@ -309,6 +309,10 @@ class BigBirdEmbeddings(Layer):
         self.position_embeddings = nn.Embedding(max_position_embeddings,
                                                 hidden_size)
         self.token_type_embeddings = nn.Embedding(type_vocab_size, hidden_size)
+        # self.word_embeddings.weight.stop_gradient = True
+        # self.position_embeddings.weight.stop_gradient = True
+        # self.token_type_embeddings.weight.stop_gradient = True
+
         self.dropout = nn.Dropout(hidden_dropout_prob)
 
     def forward(self, input_ids, token_type_ids=None, position_ids=None):
@@ -340,6 +344,7 @@ class BigBirdPretrainedModel(PretrainedModel):
     model_config_file = "model_config.json"
     pretrained_init_configuration = {
         "bigbird-base-uncased": {
+            #"num_layers": 12,
             "num_layers": 12,
             "vocab_size": 50358,
             "nhead": 12,
@@ -510,7 +515,7 @@ class BigBirdLMPredictionHead(Layer):
         # gather masked tokens might be more quick
         hidden_states = self.transform(hidden_states)
         hidden_states = self.activation(hidden_states)
-        hidden_states = self.layer_norm(hidden_states)
+        #hidden_states = self.layer_norm(hidden_states)
         hidden_states = paddle.tensor.matmul(
             hidden_states, self.decoder_weight,
             transpose_y=True) + self.decoder_bias
@@ -560,7 +565,7 @@ class BigBirdForPretraining(BigBirdPretrainedModel):
         sequence_output, pooled_output = outputs[:2]
         prediction_scores, seq_relationship_score = self.cls(
             sequence_output, pooled_output, masked_positions)
-        return prediction_scores, seq_relationship_score
+        return prediction_scores, seq_relationship_score, sequence_output
 
 
 class BigBirdPretrainingCriterion(paddle.nn.Layer):
@@ -575,7 +580,6 @@ class BigBirdPretrainingCriterion(paddle.nn.Layer):
                 masked_lm_weights):
         masked_lm_loss = paddle.nn.functional.softmax_with_cross_entropy(
             prediction_scores, masked_lm_labels, ignore_index=-1)
-        masked_lm_loss = paddle.transpose(masked_lm_loss, [1, 0])
         masked_lm_loss = paddle.sum(masked_lm_loss * masked_lm_weights) / (
             paddle.sum(masked_lm_weights) + 1e-5)
         next_sentence_loss = paddle.nn.functional.softmax_with_cross_entropy(
