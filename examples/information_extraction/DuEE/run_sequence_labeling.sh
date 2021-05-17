@@ -12,7 +12,7 @@ pred_save_path=${10}
 
 if [ "$is_train" = True ]; then
     unset CUDA_VISIBLE_DEVICES
-    python -m paddle.distributed.launch --gpus "0"  sequence_labeling.py \
+    nohup python -m paddle.distributed.launch --gpus "0"  sequence_labeling.py \
                             --num_epoch ${epoch} \
                             --learning_rate ${learning_rate} \
                             --tag_path ${conf_path} \
@@ -29,7 +29,7 @@ if [ "$is_train" = True ]; then
                             --checkpoints ${ckpt_dir} \
                             --init_ckpt ${ckpt_dir}/best.pdparams \
                             --predict_save_path ${pred_save_path} \
-                            --device gpu
+                            --device gpu &
 else
     export CUDA_VISIBLE_DEVICES=0
     python sequence_labeling.py \
