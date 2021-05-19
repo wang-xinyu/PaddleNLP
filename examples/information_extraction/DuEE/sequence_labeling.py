@@ -32,6 +32,9 @@ from paddlenlp.metrics import ChunkEvaluator
 from utils import read_by_lines, write_by_lines, load_dict
 from paddlenlp.layers.crf import LinearChainCrf, ViterbiDecoder, LinearChainCrfLoss
 
+import sys
+np.set_printoptions(threshold=sys.maxsize)
+
 warnings.filterwarnings('ignore')
 
 # yapf: disable
@@ -132,7 +135,6 @@ class ErnieCrfForTokenClassification(nn.Layer):
             token_type_ids=token_type_ids,
             attention_mask=attention_mask,
             position_ids=position_ids)
-
         if labels is not None:
             loss = self.crf_loss(logits, lengths, labels)
             return loss
@@ -225,10 +227,15 @@ def do_train():
         p.name for n, p in model.named_parameters()
         if not any(nd in n for nd in ["bias", "norm"])
     ]
+    lr_scheduler = LinearDecayWithWarmup(args.learning_rate,
+            num_training_steps, args.warmup_proportion)
+
+    clip = paddle.nn.ClipGradByNorm(clip_norm=1.0)
     optimizer = paddle.optimizer.AdamW(
-        learning_rate=args.learning_rate,
+        learning_rate=lr_scheduler,
         parameters=model.parameters(),
         weight_decay=args.weight_decay,
+        grad_clip=clip,
         apply_decay_param_fun=lambda x: x in decay_params)
 
     metric = ChunkEvaluator(label_list=train_ds.label_vocab.keys(), suffix=False)
@@ -241,22 +248,49 @@ def do_train():
             # logits = model(input_ids, token_type_ids, lengths=seq_lens, labels=labels).reshape(
             #     [-1, train_ds.label_num])
             # loss = paddle.mean(criterion(logits, labels.reshape([-1])))
-            loss = model(input_ids, token_type_ids, lengths=seq_lens, labels=labels).mean()
+            all_loss = model(input_ids, token_type_ids, lengths=seq_lens, labels=labels)
+            loss = all_loss.mean()
             loss.backward()
+            if loss<1e-8 or step == 195:
+                print("Step {}: ".format(step), flush=True)
+                print("all_loss mean:{}, std:{}, max:{}, min:{}".format(
+                    all_loss.mean().numpy(), all_loss.std().numpy(),
+                    all_loss.max().numpy(), all_loss.min().numpy()), flush=True)
+                # print("input_ids:", input_ids.numpy(), flush=True)
+                # print("token_type_ids:", token_type_ids.numpy(), flush=True)
+                # print("seq_lens:", seq_lens.numpy(), flush=True)
+                # print("labels:", labels.numpy(), flush=True)
+                for n, p in model.named_parameters():
+                    mean = None
+                    std = None
+                    max = None
+                    min = None
+                    if p.gradient() is not None:
+                        mean = p.gradient().mean()
+                        std = p.gradient().std()
+                        max = p.gradient().max()
+                        min = p.gradient().min()
+                    print("name: {}".format(p.name), flush=True)
+                    print("parameter mean:{}, std:{}, max:{}, min:{}".format(p.mean().numpy(), p.std().numpy(), p.max().numpy(), p.min().numpy()), flush=True)
+                    print("gradient mean:{}, std:{}, max:{}, min:{}".format(mean, std, max, min), flush=True)
             optimizer.step()
             optimizer.clear_grad()
+            lr_scheduler.step()
             loss_item = loss.numpy().item()
+
             if step > 0 and step % args.skip_step == 0 and rank == 0:
                 print(f'train epoch: {epoch} - step: {step} (total: {num_training_steps}) - loss: {loss_item:.6f}')
-            if step > 0 and step % args.valid_step == 0 and rank == 0:
-                p, r, f1, avg_loss = evaluate(model, criterion, metric, len(label_map), dev_loader)
-                print(f'dev step: {step} - loss: {avg_loss:.5f}, precision: {p:.5f}, recall: {r:.5f}, ' \
-                        f'f1: {f1:.5f} current best {best_f1:.5f}')
-                if f1 > best_f1:
-                    best_f1 = f1
-                    print(f'==============================================save best model ' \
-                            f'best performerence {best_f1:5f}')
-                    paddle.save(model.state_dict(), '{}/best.pdparams'.format(args.checkpoints))
+
+
+# if step > 0 and step % args.valid_step == 0 and rank == 0:
+#     p, r, f1, avg_loss = evaluate(model, criterion, metric, len(label_map), dev_loader)
+#     print(f'dev step: {step} - loss: {avg_loss:.5f}, precision: {p:.5f}, recall: {r:.5f}, ' \
+#             f'f1: {f1:.5f} current best {best_f1:.5f}')
+#     if f1 > best_f1:
+#         best_f1 = f1
+#         print(f'==============================================save best model ' \
+#                 f'best performerence {best_f1:5f}')
+#         paddle.save(model.state_dict(), '{}/best.pdparams'.format(args.checkpoints))
             step += 1
 
     # save the final model
@@ -329,7 +363,7 @@ def do_predict():
 
 
 if __name__ == '__main__':
-
+    print(args)
     if args.do_train:
         do_train()
     elif args.do_predict:

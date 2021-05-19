@@ -339,6 +339,9 @@ class ErnieModel(ErniePretrainedModel):
         encoder_outputs = self.encoder(embedding_output, attention_mask)
         sequence_output = encoder_outputs
         pooled_output = self.pooler(sequence_output)
+        # if sequence_output.isnan().all():
+        #     print("embedding_output", embedding_output)
+        #     print("sequence_output", sequence_output)
         return sequence_output, pooled_output
 
 

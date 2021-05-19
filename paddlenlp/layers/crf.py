@@ -25,7 +25,11 @@ def log_sum_exp(vec, dim=0):
     # avoid underflow and overflow
     max_num = paddle.max(vec, dim)
     max_exp = max_num.unsqueeze(-1)
-    return max_num + paddle.log(paddle.sum(paddle.exp(vec - max_exp), dim))
+    log_sum = paddle.log(paddle.sum(paddle.exp(vec - max_exp), dim))
+    sum = paddle.sum(paddle.exp(vec - max_exp), dim)
+    if (sum < 1e-47).any():
+        print("log_sum", sum)
+    return max_num + log_sum
 
 
 class LinearChainCrf(nn.Layer):
@@ -130,7 +134,17 @@ class LinearChainCrf(nn.Layer):
                 alpha_exp = alpha.unsqueeze(1)
                 # F(n) = logsumexp(F(n-1) + p(y_n) + T(y_{n-1}, y_n))
                 mat = input_exp + trans_exp + alpha_exp
+                # mat = paddle.nn.functional.normalize(mat, p=2, axis=1)
                 alpha = log_sum_exp(mat, 2).squeeze(-1)
+                # alpha = paddle.logsumexp(mat, 2)
+                # if alpha.isnan().all():
+                #     print("i: ", i)
+                #     print("mat: ", mat)
+                #     print("input_exp: ", input_exp)
+                #     print("trans_exp: ", trans_exp)
+                #     print("alpha_exp: ", alpha_exp)
+                #     print("inputs_t_exp: ", inputs_t_exp)
+
             all_alpha.append(alpha)
 
         # Get the valid alpha
@@ -143,7 +157,10 @@ class LinearChainCrf(nn.Layer):
         if self.with_start_stop_tag:
             # The last one step
             alpha += self.transitions[self.stop_idx].unsqueeze(0)
+
+        # alpha = paddle.nn.functional.normalize(alpha, p=2, axis=1)
         norm_score = log_sum_exp(alpha, 1).squeeze(-1)
+        #norm_score = paddle.logsumexp(alpha, 1)
         return norm_score
 
     def gold_score(self, inputs, labels, lengths):
