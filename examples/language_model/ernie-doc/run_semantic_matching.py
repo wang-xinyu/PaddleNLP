@@ -286,7 +286,7 @@ def do_train(args):
 
             if global_steps % args.logging_steps == 0:
                 logger.info(
-                    "train: global step %d, epoch: %d, loss: %f, acc:%f, lr: %f, speed: %.2f step/s"
+                    "train: global step %d, epoch: %d, loss: %f, acc: %f, lr: %f, speed: %.2f step/s"
                     % (global_steps, epoch, mean_loss, metric.accumulate(),
                        lr_scheduler.get_lr(),
                        args.logging_steps / (time.time() - tic_train)))
