@@ -66,7 +66,7 @@ URLS = {
     ],
 }
 
-TASK_MODEL_MAP = {"csc-ernie-1.0": "ernie-1.0"}
+TASK_MODEL_MAP = {"csc-ernie-1.0": "ernie-1.0-csc"}
 
 
 class CSCTask(Task):
@@ -319,6 +319,9 @@ class CSCTask(Task):
                     j] == 0 or candidates == UNK or candidates == '[PAD]':
                 pred_result += word
             else:
-                pred_result += candidates.lstrip("##")
+                if candidates.lstrip("##") != "":
+                    pred_result += candidates.lstrip("##")
+                else:
+                    pred_result += candidates
         pred_result += ''.join(rest_words)
         return pred_result

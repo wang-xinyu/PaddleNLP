@@ -129,6 +129,9 @@ def parse_decode(words, corr_preds, det_preds, lengths, tokenizer,
                 j] == 0 or candidates == UNK or candidates == '[PAD]':
             pred_result += word
         else:
-            pred_result += candidates.lstrip("##")
+            if candidates.lstrip("##") != "":
+                pred_result += candidates.lstrip("##")
+            else:
+                pred_result += candidates
     pred_result += ''.join(rest_words)
     return pred_result
