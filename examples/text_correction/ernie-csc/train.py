@@ -17,6 +17,7 @@ import argparse
 import os
 import random
 import time
+import distutils.util
 
 import numpy as np
 import paddle
@@ -51,7 +52,8 @@ parser.add_argument("--pinyin_vocab_file_path", type=str, default="pinyin_vocab.
 parser.add_argument("--adam_epsilon", default=1e-8, type=float, help="Epsilon for Adam optimizer.")
 parser.add_argument("--ignore_label", default=-1, type=int, help="Ignore label for CrossEntropyLoss")
 parser.add_argument("--extra_train_ds_dir", default=None, type=str, help="The directory of extra train dataset.")
-
+parser.add_argument("--use_amp", type=distutils.util.strtobool, default=False, help="Enable mixed precision training.")
+parser.add_argument("--scale_loss", type=float, default=2**15, help="The value of scale_loss for fp16.")
 # yapf: enable
 args = parser.parse_args()
 
@@ -185,23 +187,31 @@ def do_train(args):
     global_steps = 1
     best_f1 = -1
     tic_train = time.time()
+    if args.use_amp:
+        scaler = paddle.amp.GradScaler(init_loss_scaling=args.scale_loss)
     for epoch in range(args.epochs):
         for step, batch in enumerate(train_data_loader, start=1):
             input_ids, token_type_ids, pinyin_ids, det_labels, corr_labels, length = batch
-            det_error_probs, corr_logits = model(input_ids, pinyin_ids,
-                                                 token_type_ids)
-            # Chinese Spelling Correction has 2 tasks: detection task and correction task.
-            # Detection task aims to detect whether each Chinese charater has spelling error.
-            # Correction task aims to correct each potential wrong charater to right charater.
-            # So we need to minimize detection loss and correction loss simultaneously.
-            # See more loss design details on https://aclanthology.org/2021.findings-acl.198.pdf
-            det_loss = det_loss_act(det_error_probs, det_labels)
-            corr_loss = corr_loss_act(
-                corr_logits, corr_labels) * det_error_probs.max(axis=-1)
-            loss = (det_loss + corr_loss).mean()
-
-            loss.backward()
-            optimizer.step()
+            with paddle.amp.auto_cast(
+                    args.use_amp,
+                    custom_white_list=["layer_norm", "softmax", "gelu"]):
+                det_error_probs, corr_logits = model(input_ids, pinyin_ids,
+                                                     token_type_ids)
+                # Chinese Spelling Correction has 2 tasks: detection task and correction task.
+                # Detection task aims to detect whether each Chinese charater has spelling error.
+                # Correction task aims to correct each potential wrong charater to right charater.
+                # So we need to minimize detection loss and correction loss simultaneously.
+                # See more loss design details on https://aclanthology.org/2021.findings-acl.198.pdf
+                det_loss = det_loss_act(det_error_probs, det_labels)
+                corr_loss = corr_loss_act(
+                    corr_logits, corr_labels) * det_error_probs.max(axis=-1)
+                loss = (det_loss + corr_loss).mean()
+            if args.use_amp:
+                scaler.scale(loss).backward()
+                scaler.minimize(optimizer, loss)
+            else:
+                loss.backward()
+                optimizer.step()
             lr_scheduler.step()
             optimizer.clear_grad()
 
