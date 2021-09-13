@@ -33,7 +33,7 @@ from utils import read_test_ds, convert_example, create_dataloader, is_chinese_c
 
 # yapf: disable
 parser = argparse.ArgumentParser()
-parser.add_argument("--model_name_or_path", type=str, default="ernie-1.0", choices=["ernie-1.0"], help="Pretraining model name or path")
+parser.add_argument("--model_name_or_path", type=str, default="ernie-1.0-csc", choices=["ernie-1.0-csc"], help="Pretraining model name or path")
 parser.add_argument("--ckpt_path", default=None, type=str, help="The model checkpoint path.", )
 parser.add_argument("--max_seq_length", default=128, type=int, help="The maximum total input sequence length after tokenization. Sequences longer " "than this will be truncated, sequences shorter will be padded.", )
 parser.add_argument("--batch_size", default=8, type=int, help="Batch size per GPU/CPU for training.", )

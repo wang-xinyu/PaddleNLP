@@ -1,6 +1,6 @@
 export CUDA_VISIBLE_DEVICES=0
 
-model_name_or_path=ernie-1.0
+model_name_or_path=ernie-1.0-csc
 checkpoints_path=checkpoints
 model_file=best_model.pdparams
 

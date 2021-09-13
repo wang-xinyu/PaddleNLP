@@ -25,7 +25,7 @@ from model import ErnieForCSC
 parser = argparse.ArgumentParser(__doc__)
 parser.add_argument("--params_path", type=str, default='./checkpoints/final.pdparams', help="The path of model parameter to be loaded.")
 parser.add_argument("--output_path", type=str, default='./infer_model/static_graph_params', help="The path of model parameter in static graph to be saved.")
-parser.add_argument("--model_name_or_path", type=str, default="ernie-1.0", choices=["ernie-1.0"], help="Pretraining model name or path")
+parser.add_argument("--model_name_or_path", type=str, default="ernie-1.0-csc", choices=["ernie-1.0-csc"], help="Pretraining model name or path")
 parser.add_argument("--pinyin_vocab_file_path", type=str, default="pinyin_vocab.txt", help="pinyin vocab file path")
 args = parser.parse_args()
 # yapf: enable
