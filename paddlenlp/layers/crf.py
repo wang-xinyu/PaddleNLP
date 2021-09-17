@@ -219,7 +219,7 @@ class LinearChainCrf(nn.Layer):
         stop_tag_indices = labels_ext[:, 1:]
 
         # Encode the indices in a flattened representation.
-        transition_indices = start_tag_indices * self.num_tags + stop_tag_indices
+        transition_indices = stop_tag_indices * self.num_tags + start_tag_indices
         flattened_transition_indices = transition_indices.reshape([-1])
         flattened_transition_params = paddle.flatten(self.transitions)
         scores = paddle.gather(
