@@ -169,7 +169,6 @@ class Predictor(object):
                 is_test=True,
                 is_pair=True)
             examples.append((input_ids, segment_ids))
-
         batchify_fn = lambda samples, fn=Tuple(
             Pad(axis=0, pad_val=tokenizer.pad_token_id),  # input
             Pad(axis=0, pad_val=tokenizer.pad_token_id),  # segment
@@ -192,6 +191,8 @@ def read_data(data_file):
     with open(data_file, "r") as f:
         for line in f.readlines():
             text_a, text_b, label = line.strip().split("\t")
+            text_a = text_a.replace(' ', '')
+            text_b = text_b.replace(' ', '')
             data.append((text_a, text_b))
             labels.append(int(label))
     return data, labels
@@ -203,11 +204,10 @@ if __name__ == "__main__":
     predictor = Predictor(args.model_dir, args.device, args.max_seq_length,
                           args.batch_size, args.use_tensorrt, args.precision,
                           args.cpu_threads, args.enable_mkldnn)
-
     data, labels = read_data(args.test_ds_path)
     predict_labels = []
-    for example in data:
-        _, label = predictor.predict([example], tokenizer)
+    for i, example in enumerate(data):
+        prob, label = predictor.predict([example], tokenizer)
         predict_labels.extend(label)
     correct = (np.array(labels) == np.array(predict_labels)).sum()
     total = len(labels)

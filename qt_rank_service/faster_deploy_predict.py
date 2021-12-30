@@ -119,6 +119,8 @@ def read_data(data_file):
     with open(data_file, "r") as f:
         for line in f.readlines():
             text_a, text_b, label = line.strip().split("\t")
+            text_a = text_a.replace(' ', '')
+            text_b = text_b.replace(' ', '')
             data.append((text_a, text_b))
             labels.append(int(label))
     return data, labels

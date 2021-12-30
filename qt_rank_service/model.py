@@ -23,10 +23,15 @@ from paddlenlp.experimental.model_utils import load_vocabulary
 
 
 class ErnieWithFasterTokenizer(nn.Layer):
+    def init_weights(self, layer):
+        """ Initialization hook """
+        if isinstance(layer, nn.LayerNorm):
+            layer._epsilon = 1e-5
+
     def __init__(self,
                  ernie,
                  vocab_file,
-                 do_lower_case=False,
+                 do_lower_case=True,
                  is_split_into_words=False,
                  max_seq_len=128,
                  pad_to_max_seq_len=False):
@@ -39,6 +44,7 @@ class ErnieWithFasterTokenizer(nn.Layer):
             is_split_into_words=is_split_into_words)
         self.max_seq_len = max_seq_len
         self.pad_to_max_seq_len = pad_to_max_seq_len
+        self.apply(self.init_weights)
 
     def forward(self, text, text_pair=None):
         input_ids, token_type_ids = self.tokenizer(
