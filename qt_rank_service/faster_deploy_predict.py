@@ -66,6 +66,7 @@ class Predictor(object):
             # set GPU configs accordingly
             # such as intialize the gpu memory, enable tensorrt
             config.enable_use_gpu(100, 0)
+            config.enable_memory_optim()
             precision_map = {
                 "fp16": inference.PrecisionType.Half,
                 "fp32": inference.PrecisionType.Float32,
