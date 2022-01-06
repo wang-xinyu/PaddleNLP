@@ -18,7 +18,7 @@ import os
 import paddle
 import paddle.nn as nn
 import paddlenlp
-from paddlenlp.experimental import FasterTokenizer
+from paddlenlp.experimental import FasterTokenizer, FasterErnieForSequenceClassification
 from paddlenlp.experimental.model_utils import load_vocabulary
 
 
@@ -54,3 +54,21 @@ class ErnieWithFasterTokenizer(nn.Layer):
             pad_to_max_seq_len=self.pad_to_max_seq_len)
         logits = self.ernie(input_ids, token_type_ids)
         return logits
+
+
+class FasterErnieWithFasterTokenizer(FasterErnieForSequenceClassification):
+    def init_weights(self, layer):
+        """ Initialization hook """
+        if isinstance(layer, (nn.Linear, nn.Embedding)):
+            # only support dygraph, use truncated_normal and make it inplace
+            # and configurable later
+            if isinstance(layer.weight, paddle.Tensor):
+                layer.weight.set_value(
+                    paddle.tensor.normal(
+                        mean=0.0,
+                        std=self.initializer_range
+                        if hasattr(self, "initializer_range") else
+                        self.ernie.config["initializer_range"],
+                        shape=layer.weight.shape))
+        elif isinstance(layer, nn.LayerNorm):
+            layer._epsilon = 1e-5

@@ -26,6 +26,7 @@ import paddle
 
 from paddlenlp.transformers import ErnieForSequenceClassification
 from paddlenlp.experimental import FasterErnieForSequenceClassification, FasterErnieModel
+from model import FasterErnieWithFasterTokenizer
 
 
 def parse_args():
@@ -69,6 +70,7 @@ def fused_qkv(q, k, v, num_head):
 
 
 def convert_encoder(encoder, fused_encoder, num_heads):
+
     for i in range(len(encoder.layers)):
         base_layer = encoder.layers[i]
         fused_layer = fused_encoder.layers[i]
@@ -112,16 +114,11 @@ def convert_encoder(encoder, fused_encoder, num_heads):
 
 def do_convert(args):
     paddle.set_device("cpu")
-    model_config_file = os.path.join(args.params_dir, "model_config.json")
     vocab_file = os.path.join(args.params_dir, "vocab.txt")
-    with open(model_config_file, 'r') as f:
-        array = json.load(f)
     ernie_seq_cls = ErnieForSequenceClassification.from_pretrained(
         args.params_dir, num_classes=2)
-
-    faster_ernie_model = FasterErnieModel(vocab_file=vocab_file, **array)
-    faster_ernie_seq_cls = FasterErnieForSequenceClassification(
-        faster_ernie_model, num_classes=2)
+    faster_ernie_seq_cls = FasterErnieWithFasterTokenizer.from_pretrained(
+        args.params_dir, vocab_file=vocab_file, num_classes=2, max_seq_len=60)
 
     num_heads = faster_ernie_seq_cls.ernie.encoder.layers[
         0].fused_attn.num_heads
@@ -129,7 +126,7 @@ def do_convert(args):
                     faster_ernie_seq_cls.ernie.encoder, num_heads)
 
     model = faster_ernie_seq_cls
-    output_dir = os.path.join(args.output_dir, "faster_ernie_qt_service")
+    output_dir = os.path.join(args.output_dir)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     model.save_pretrained(output_dir)
