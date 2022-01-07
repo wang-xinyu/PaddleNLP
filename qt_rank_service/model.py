@@ -72,3 +72,10 @@ class FasterErnieWithFasterTokenizer(FasterErnieForSequenceClassification):
                         shape=layer.weight.shape))
         elif isinstance(layer, nn.LayerNorm):
             layer._epsilon = 1e-5
+
+    def forward(self, text, text_pair=None):
+        _, pooled_output = self.ernie(text, text_pair)
+        pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(pooled_output)
+        probs = nn.functional.softmax(logits, axis=-1)
+        return logits, probs

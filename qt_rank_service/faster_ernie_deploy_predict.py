@@ -110,9 +110,8 @@ class Predictor(object):
         self.input_handles[1].copy_from_cpu(list(text_pairs))
         self.predictor.run()
         logits = self.output_handles[0].copy_to_cpu()
-        probs = softmax(logits, axis=1)
-        idx = np.argmax(probs, axis=1)
-        idx = idx.tolist()
+        probs = self.output_handles[1].copy_to_cpu()
+        idx = []
         return probs, idx
 
 
