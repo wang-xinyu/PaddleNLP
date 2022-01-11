@@ -39,6 +39,7 @@ parser.add_argument('--enable_mkldnn', type=eval, default=False, choices=[True, 
 parser.add_argument("--benchmark", type=eval, default=False, help="To log some information about environment and running.")
 parser.add_argument("--save_log_path", type=str, default="./log_output/", help="The file path to save log.")
 parser.add_argument("--test_ds_path", type=str, default="../../qt_rank_service/test_data", help="")
+parser.add_argument("--server_port", type=int, default=8031, help="server port")
 args = parser.parse_args()
 # yapf: enable
 
