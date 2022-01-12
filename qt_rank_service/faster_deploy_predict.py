@@ -76,9 +76,46 @@ class Predictor(object):
 
             if use_tensorrt:
                 config.enable_tensorrt_engine(
+                    workspace_size=1 << 30,
                     max_batch_size=batch_size,
-                    min_subgraph_size=30,
-                    precision_mode=precision_mode)
+                    min_subgraph_size=1,
+                    precision_mode=precision_mode,
+                    use_static=False,
+                    use_calib_mode=False)
+                min_bth_shape = [1, 1, 1024]
+                max_bth_shape = [batch_size, max_seq_length, 1024]
+                opt_bth_shape = [batch_size, 30, 1024]
+                min_input_shape = {
+                    # shape: [B, T, H]
+                    "layer_norm_94.tmp_2": min_bth_shape,
+                    "embedding_3.tmp_0": min_bth_shape,
+                    "embedding_4.tmp_0": min_bth_shape,
+                    "embedding_5.tmp_0": min_bth_shape,
+                    # shape: [B, 1, 1, T]
+                    "unsqueeze2_0.tmp_0": [1, 1, 1, 1],
+                    "layer_norm_97.tmp_2_slice_0": [1, 1024],
+                }
+                max_input_shape = {
+                    "layer_norm_94.tmp_2": max_bth_shape,
+                    "embedding_3.tmp_0": max_bth_shape,
+                    "embedding_4.tmp_0": max_bth_shape,
+                    "embedding_5.tmp_0": max_bth_shape,
+                    # shape: [B, 1, 1, T]
+                    "unsqueeze2_0.tmp_0": [batch_size, 1, 1, max_seq_length],
+                    "layer_norm_97.tmp_2_slice_0": [batch_size, 1024],
+                }
+                opt_input_shape = {
+                    "layer_norm_94.tmp_2": opt_bth_shape,
+                    "embedding_3.tmp_0": opt_bth_shape,
+                    "embedding_4.tmp_0": opt_bth_shape,
+                    "embedding_5.tmp_0": opt_bth_shape,
+                    # shape: [B, 1, 1, T]
+                    "unsqueeze2_0.tmp_0": [batch_size, 1, 1, 30],
+                    "layer_norm_97.tmp_2_slice_0": [batch_size, 1024],
+                }
+                config.set_trt_dynamic_shape_info(
+                    min_input_shape, max_input_shape, opt_input_shape)
+
         elif device == "cpu":
             # set CPU configs accordingly,
             # such as enable_mkldnn, set_cpu_math_library_num_threads
