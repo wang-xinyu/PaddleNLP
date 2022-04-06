@@ -143,7 +143,7 @@ if __name__ == '__main__':
         evaluate(model, metric, dev_loader)
 
         paddle.save(model.state_dict(),
-                    os.path.join(args.save_dir, 'model_%d' % step))
+                    os.path.join(args.save_dir, 'model_%d.pdparams' % step))
 
     preds = predict(model, test_loader, test_ds, label_vocab)
     file_path = "ernie_crf_results.txt"

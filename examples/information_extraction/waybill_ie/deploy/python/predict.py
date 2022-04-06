@@ -37,6 +37,7 @@ parser.add_argument('--cpu_threads', default=10, type=int, help='Number of threa
 parser.add_argument('--enable_mkldnn', default=False, type=eval, choices=[True, False], help='Enable to use mkldnn to speed up when using cpu.')
 parser.add_argument("--benchmark", type=eval, default=False, help="To log some information about environment and running.")
 parser.add_argument("--save_log_path", type=str, default="./log_output/", help="The file path to save log.")
+parser.add_argument("--model", type=str, default="ernie", choices=["ernie_crf", "bigru_crf"], help="The model used to predict")
 args = parser.parse_args()
 # yapf: enable
 
@@ -113,7 +114,16 @@ def parse_decodes(sentences, predictions, lengths, label_vocab):
     return outputs
 
 
-def convert_to_features(example, tokenizer):
+def convert_tokens_to_ids(tokens, vocab, oov_token=None):
+    token_ids = []
+    oov_id = vocab.get(oov_token) if oov_token else None
+    for token in tokens:
+        token_id = vocab.get(token, oov_id)
+        token_ids.append(token_id)
+    return token_ids
+
+
+def convert_to_features_ernie(example, tokenizer):
     tokens = example[0]
     tokenized_input = tokenizer(
         tokens, return_length=True, is_split_into_words=True)
@@ -122,14 +132,19 @@ def convert_to_features(example, tokenizer):
         'token_type_ids'], tokenized_input['seq_len']
 
 
+def convert_to_features_bigru_crf(example, word_vocab):
+    tokens = example[0]
+    token_ids = convert_tokens_to_ids(tokens, word_vocab, 'OOV')
+    return token_ids, len(token_ids)
+
+
 def read(data_path):
     with open(data_path, 'r', encoding='utf-8') as fp:
         next(fp)  # Skip header
         for line in fp.readlines():
-            words, labels = line.strip('\n').split('\t')
+            words, _ = line.strip('\n').split('\t')
             words = words.split('\002')
-            labels = labels.split('\002')
-            yield words, labels
+            yield (words, )
 
 
 class Predictor(object):
@@ -178,15 +193,17 @@ class Predictor(object):
         elif device == "xpu":
             # set XPU configs accordingly
             config.enable_xpu(100)
-
+        config.enable_memory_optim()
         config.switch_use_feed_fetch_ops(False)
         self.predictor = paddle.inference.create_predictor(config)
         self.input_handles = [
             self.predictor.get_input_handle(name)
             for name in self.predictor.get_input_names()
         ]
-        self.output_handle = self.predictor.get_output_handle(
-            self.predictor.get_output_names()[0])
+        self.output_handles = [
+            self.predictor.get_output_handle(name)
+            for name in self.predictor.get_output_names()
+        ]
 
         if args.benchmark:
             import auto_log
@@ -207,13 +224,13 @@ class Predictor(object):
                 warmup=0,
                 logger=logger)
 
-    def predict(self, dataset, batchify_fn, tokenizer, label_vocab):
+    def predict(self, dataset, batchify_fn, tokenizer, word_vocab, label_vocab):
         if args.benchmark:
             self.autolog.times.start()
         all_preds = []
         all_lens = []
         num_of_examples = len(dataset)
-        trans_func = partial(convert_to_features, tokenizer=tokenizer)
+        trans_func = partial(convert_to_features_ernie, tokenizer=tokenizer)
         start_idx = 0
         while start_idx < num_of_examples:
             end_idx = start_idx + self.batch_size
@@ -228,7 +245,7 @@ class Predictor(object):
             self.input_handles[0].copy_from_cpu(input_ids)
             self.input_handles[1].copy_from_cpu(segment_ids)
             self.predictor.run()
-            logits = self.output_handle.copy_to_cpu()
+            logits = self.output_handles[0].copy_to_cpu()
 
             if args.benchmark:
                 self.autolog.times.stamp()
@@ -247,11 +264,74 @@ class Predictor(object):
         return results
 
 
+class BiGRUCRFPredictor(Predictor):
+    def predict(self, dataset, batchify_fn, tokenizer, word_vocab, label_vocab):
+        all_preds = []
+        all_lens = []
+        num_of_examples = len(dataset)
+        trans_func = partial(convert_to_features_bigru_crf, tokenizer=tokenizer)
+        start_idx = 0
+        while start_idx < num_of_examples:
+            end_idx = start_idx + self.batch_size
+            end_idx = end_idx if end_idx < num_of_examples else num_of_examples
+            batch_data = [
+                trans_func(example) for example in dataset[start_idx:end_idx]
+            ]
+            input_ids, segment_ids, lens = batchify_fn(batch_data)
+            self.input_handles[0].copy_from_cpu(input_ids)
+            self.input_handles[1].copy_from_cpu(segment_ids)
+            self.predictor.run()
+            logits = self.output_handles[0].copy_to_cpu()
+
+            preds = np.argmax(logits, axis=-1)
+            # Drop CLS prediction
+            preds = preds[:, 1:]
+            all_preds.append(preds)
+            all_lens.append(lens)
+
+            start_idx += self.batch_size
+        sentences = [example[0] for example in dataset.data]
+        results = parse_decodes(sentences, all_preds, all_lens, label_vocab)
+        return results
+
+
+class ErnieCRFPredictor(Predictor):
+    def predict(self, dataset, batchify_fn, tokenizer, word_vocab, label_vocab):
+        all_preds = []
+        all_lens = []
+        num_of_examples = len(dataset)
+        trans_func = partial(convert_to_features_ernie, tokenizer=tokenizer)
+        start_idx = 0
+        while start_idx < num_of_examples:
+            end_idx = start_idx + self.batch_size
+            end_idx = end_idx if end_idx < num_of_examples else num_of_examples
+            batch_data = [
+                trans_func(example) for example in dataset[start_idx:end_idx]
+            ]
+            input_ids, segment_ids, lens = batchify_fn(batch_data)
+            self.input_handles[0].copy_from_cpu(input_ids)
+            self.input_handles[1].copy_from_cpu(segment_ids)
+            self.predictor.run()
+            logits = self.output_handles[0].copy_to_cpu()
+
+            preds = np.argmax(logits, axis=-1)
+            # Drop CLS prediction
+            preds = preds[:, 1:]
+            all_preds.append(preds)
+            all_lens.append(lens)
+
+            start_idx += self.batch_size
+        sentences = [example[0] for example in dataset.data]
+        results = parse_decodes(sentences, all_preds, all_lens, label_vocab)
+        return results
+
+
 if __name__ == '__main__':
     tokenizer = ErnieTokenizer.from_pretrained('ernie-1.0')
     test_ds = load_dataset(
         read, data_path=os.path.join(args.data_dir, 'test.txt'), lazy=False)
     label_vocab = load_dict(os.path.join(args.data_dir, 'tag.dic'))
+    word_vocab = load_dict(os.path.join(args.data_dir, 'word.dic'))
 
     batchify_fn = lambda samples, fn=Tuple(
         Pad(axis=0, pad_val=tokenizer.pad_token_id, dtype='int64'),  # input_ids
@@ -263,7 +343,8 @@ if __name__ == '__main__':
                           args.use_tensorrt, args.precision, args.enable_mkldnn,
                           args.benchmark, args.save_log_path)
 
-    results = predictor.predict(test_ds, batchify_fn, tokenizer, label_vocab)
+    results = predictor.predict(test_ds, batchify_fn, tokenizer, word_vocab,
+                                label_vocab)
     print("\n".join(results))
     if args.benchmark:
         predictor.autolog.report()

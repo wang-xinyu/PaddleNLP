@@ -21,21 +21,72 @@ import paddle
 import paddle.nn.functional as F
 import paddlenlp as ppnlp
 from data import load_dict, load_dataset, parse_decodes
+from model import BiGRUWithCRF, ErnieCrfForTokenClassification
 
 # yapf: disable
 parser = argparse.ArgumentParser()
 parser.add_argument("--params_path", type=str, required=True, default='./checkpoint/model_900/model_state.pdparams', help="The path to model parameters to be loaded.")
 parser.add_argument("--output_path", type=str, default='./output', help="The path of model parameter in static graph to be saved.")
 parser.add_argument("--data_dir", type=str, default="./waybill_ie/data", help="The folder where the dataset is located.")
+parser.add_argument("--model", type=str, default="ernie", choices=["ernie_crf", "bigru_crf"], help="The model to be exported")
 args = parser.parse_args()
 # yapf: enable
+
+
+def init_model(model_type, word_vocab, label_vocab):
+    if model_type == "ernie":
+        model = ppnlp.transformers.ErnieForTokenClassification.from_pretrained(
+            "ernie-1.0", num_classes=len(label_vocab))
+    elif model_type == "ernie_crf":
+        ernie = ppnlp.transformers.ErnieForTokenClassification.from_pretrained(
+            "ernie-1.0", num_classes=len(label_vocab))
+        model = ErnieCrfForTokenClassification(ernie)
+    else:
+        model = BiGRUWithCRF(300, 256, len(word_vocab), len(label_vocab))
+    return model
+
+
+def to_static(model_type, model):
+    if model_type == "ernie":
+        model = paddle.jit.to_static(
+            model,
+            input_spec=[
+                paddle.static.InputSpec(
+                    shape=[None, None], dtype="int64"),  # input_ids
+                paddle.static.InputSpec(
+                    shape=[None, None], dtype="int64")  # segment_ids
+            ])
+    elif model_type == "ernie_crf":
+        model = paddle.jit.to_static(
+            model,
+            input_spec=[
+                paddle.static.InputSpec(
+                    shape=[None, None], dtype="int64"),  # input_ids
+                paddle.static.InputSpec(
+                    shape=[None, None], dtype="int64"),  # segment_ids
+                None,  # position_ids
+                None,  # attention_mask
+                paddle.static.InputSpec(
+                    shape=[None], dtype="int64")  # length
+            ])
+    else:  # BiGRUCRF
+        model = paddle.jit.to_static(
+            model,
+            input_spec=[
+                paddle.static.InputSpec(
+                    shape=[None, None], dtype="int64"),  # input_ids
+                paddle.static.InputSpec(
+                    shape=[None], dtype="int64")  # length
+            ])
+    return model
+
 
 if __name__ == "__main__":
     # The number of labels should be in accordance with the training dataset.
     label_vocab = load_dict(os.path.join(args.data_dir, 'tag.dic'))
+    word_vocab = load_dict(os.path.join(args.data_dir, 'word.dic'))
 
-    model = ppnlp.transformers.ErnieForTokenClassification.from_pretrained(
-        "ernie-1.0", num_classes=len(label_vocab))
+    model = init_model(args.model, word_vocab, label_vocab)
 
     if args.params_path and os.path.isfile(args.params_path):
         state_dict = paddle.load(args.params_path)
@@ -43,14 +94,6 @@ if __name__ == "__main__":
         print("Loaded parameters from %s" % args.params_path)
     model.eval()
 
-    model = paddle.jit.to_static(
-        model,
-        input_spec=[
-            paddle.static.InputSpec(
-                shape=[None, None], dtype="int64"),  # input_ids
-            paddle.static.InputSpec(
-                shape=[None, None], dtype="int64")  # segment_ids
-        ])
-
+    model = to_static(args.model, model)
     save_path = os.path.join(args.output_path, "inference")
     paddle.jit.save(model, save_path)
