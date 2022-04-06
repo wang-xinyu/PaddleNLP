@@ -123,7 +123,7 @@ def convert_tokens_to_ids(tokens, vocab, oov_token=None):
     return token_ids
 
 
-def convert_to_features_ernie(example, tokenizer):
+def convert_to_features_ernie(example, tokenizer, word_vocab):
     tokens = example[0]
     tokenized_input = tokenizer(
         tokens, return_length=True, is_split_into_words=True)
@@ -132,7 +132,7 @@ def convert_to_features_ernie(example, tokenizer):
         'token_type_ids'], tokenized_input['seq_len']
 
 
-def convert_to_features_bigru_crf(example, word_vocab):
+def convert_to_features_bigru_crf(example, tokenizer, word_vocab):
     tokens = example[0]
     token_ids = convert_tokens_to_ids(tokens, word_vocab, 'OOV')
     return token_ids, len(token_ids)
@@ -147,7 +147,7 @@ def read(data_path):
             yield (words, )
 
 
-class Predictor(object):
+class ErniePredictor(object):
     def __init__(self,
                  model_dir,
                  device="gpu",
@@ -224,13 +224,29 @@ class Predictor(object):
                 warmup=0,
                 logger=logger)
 
-    def predict(self, dataset, batchify_fn, tokenizer, word_vocab, label_vocab):
+    def run_predictor(self, batchify_fn, batch_data):
+        input_ids, segment_ids, lens = batchify_fn(batch_data)
+        self.input_handles[0].copy_from_cpu(input_ids)
+        self.input_handles[1].copy_from_cpu(segment_ids)
+        self.predictor.run()
+        logits = self.output_handles[0].copy_to_cpu()
+
+        if args.benchmark:
+            self.autolog.times.stamp()
+        preds = np.argmax(logits, axis=-1)
+        # Drop CLS prediction
+        preds = preds[:, 1:]
+        return preds, lens
+
+    def predict(self, dataset, batchify_fn, convert_to_features, tokenizer,
+                word_vocab, label_vocab):
         if args.benchmark:
             self.autolog.times.start()
         all_preds = []
         all_lens = []
         num_of_examples = len(dataset)
-        trans_func = partial(convert_to_features_ernie, tokenizer=tokenizer)
+        trans_func = partial(
+            convert_to_features, tokenizer=tokenizer, word_vocab=word_vocab)
         start_idx = 0
         while start_idx < num_of_examples:
             end_idx = start_idx + self.batch_size
@@ -241,20 +257,9 @@ class Predictor(object):
 
             if args.benchmark:
                 self.autolog.times.stamp()
-            input_ids, segment_ids, lens = batchify_fn(batch_data)
-            self.input_handles[0].copy_from_cpu(input_ids)
-            self.input_handles[1].copy_from_cpu(segment_ids)
-            self.predictor.run()
-            logits = self.output_handles[0].copy_to_cpu()
-
-            if args.benchmark:
-                self.autolog.times.stamp()
-            preds = np.argmax(logits, axis=-1)
-            # Drop CLS prediction
-            preds = preds[:, 1:]
+            preds, lens = self.run_predictor(batchify_fn, batch_data)
             all_preds.append(preds)
             all_lens.append(lens)
-
             start_idx += self.batch_size
 
         if args.benchmark:
@@ -264,67 +269,57 @@ class Predictor(object):
         return results
 
 
-class BiGRUCRFPredictor(Predictor):
-    def predict(self, dataset, batchify_fn, tokenizer, word_vocab, label_vocab):
-        all_preds = []
-        all_lens = []
-        num_of_examples = len(dataset)
-        trans_func = partial(convert_to_features_bigru_crf, tokenizer=tokenizer)
-        start_idx = 0
-        while start_idx < num_of_examples:
-            end_idx = start_idx + self.batch_size
-            end_idx = end_idx if end_idx < num_of_examples else num_of_examples
-            batch_data = [
-                trans_func(example) for example in dataset[start_idx:end_idx]
-            ]
-            input_ids, segment_ids, lens = batchify_fn(batch_data)
-            self.input_handles[0].copy_from_cpu(input_ids)
-            self.input_handles[1].copy_from_cpu(segment_ids)
-            self.predictor.run()
-            logits = self.output_handles[0].copy_to_cpu()
-
-            preds = np.argmax(logits, axis=-1)
-            # Drop CLS prediction
-            preds = preds[:, 1:]
-            all_preds.append(preds)
-            all_lens.append(lens)
-
-            start_idx += self.batch_size
-        sentences = [example[0] for example in dataset.data]
-        results = parse_decodes(sentences, all_preds, all_lens, label_vocab)
-        return results
+class BiGRUCRFPredictor(ErniePredictor):
+    def run_predictor(self, batchify_fn, batch_data):
+        input_ids, lens = batchify_fn(batch_data)
+        self.input_handles[0].copy_from_cpu(input_ids)
+        self.input_handles[1].copy_from_cpu(lens)
+        self.predictor.run()
+        preds = self.output_handles[0].copy_to_cpu()
+        if args.benchmark:
+            self.autolog.times.stamp()
+        return preds, lens
 
 
-class ErnieCRFPredictor(Predictor):
-    def predict(self, dataset, batchify_fn, tokenizer, word_vocab, label_vocab):
-        all_preds = []
-        all_lens = []
-        num_of_examples = len(dataset)
-        trans_func = partial(convert_to_features_ernie, tokenizer=tokenizer)
-        start_idx = 0
-        while start_idx < num_of_examples:
-            end_idx = start_idx + self.batch_size
-            end_idx = end_idx if end_idx < num_of_examples else num_of_examples
-            batch_data = [
-                trans_func(example) for example in dataset[start_idx:end_idx]
-            ]
-            input_ids, segment_ids, lens = batchify_fn(batch_data)
-            self.input_handles[0].copy_from_cpu(input_ids)
-            self.input_handles[1].copy_from_cpu(segment_ids)
-            self.predictor.run()
-            logits = self.output_handles[0].copy_to_cpu()
+class ErnieCRFPredictor(ErniePredictor):
+    def run_predictor(self, batchify_fn, batch_data):
+        input_ids, segment_ids, lens = batchify_fn(batch_data)
+        self.input_handles[0].copy_from_cpu(input_ids)
+        self.input_handles[1].copy_from_cpu(segment_ids)
+        self.input_handles[2].copy_from_cpu(lens)
+        self.predictor.run()
+        preds = self.output_handles[0].copy_to_cpu()
+        if args.benchmark:
+            self.autolog.times.stamp()
+        # Drop CLS prediction
+        preds = preds[:, 1:]
+        return preds, lens
 
-            preds = np.argmax(logits, axis=-1)
-            # Drop CLS prediction
-            preds = preds[:, 1:]
-            all_preds.append(preds)
-            all_lens.append(lens)
 
-            start_idx += self.batch_size
-        sentences = [example[0] for example in dataset.data]
-        results = parse_decodes(sentences, all_preds, all_lens, label_vocab)
-        return results
+def ernie_batchify_fn(samples):
+    return Tuple(
+        Pad(axis=0, pad_val=tokenizer.pad_token_id, dtype='int64'),  # input_ids
+        Pad(axis=0, pad_val=tokenizer.pad_token_type_id,
+            dtype='int64'),  # token_type_ids
+        Stack(dtype='int64'),  # seq_len
+    )(samples)
 
+
+def bigru_crf_batchify_fn(samples):
+    return Tuple(
+        Pad(axis=0, pad_val=word_vocab.get('OOV', 0),
+            dtype='int32'),  # token_ids
+        Stack(dtype='int64')  # seq_len
+    )(samples)
+
+
+PREDICTOR_INFO = {
+    "ernie": (ernie_batchify_fn, convert_to_features_ernie, ErniePredictor),
+    "ernie_crf":
+    (ernie_batchify_fn, convert_to_features_ernie, ErnieCRFPredictor),
+    "bigru_crf":
+    (bigru_crf_batchify_fn, convert_to_features_bigru_crf, BiGRUCRFPredictor),
+}
 
 if __name__ == '__main__':
     tokenizer = ErnieTokenizer.from_pretrained('ernie-1.0')
@@ -333,18 +328,12 @@ if __name__ == '__main__':
     label_vocab = load_dict(os.path.join(args.data_dir, 'tag.dic'))
     word_vocab = load_dict(os.path.join(args.data_dir, 'word.dic'))
 
-    batchify_fn = lambda samples, fn=Tuple(
-        Pad(axis=0, pad_val=tokenizer.pad_token_id, dtype='int64'),  # input_ids
-        Pad(axis=0, pad_val=tokenizer.pad_token_type_id, dtype='int64'),  # token_type_ids
-        Stack(dtype='int64'),  # seq_len
-    ): fn(samples)
-
+    batchify_fn, convert_to_features, Predictor = PREDICTOR_INFO[args.model]
     predictor = Predictor(args.model_dir, args.device, args.batch_size,
                           args.use_tensorrt, args.precision, args.enable_mkldnn,
                           args.benchmark, args.save_log_path)
-
-    results = predictor.predict(test_ds, batchify_fn, tokenizer, word_vocab,
-                                label_vocab)
+    results = predictor.predict(test_ds, batchify_fn, convert_to_features,
+                                tokenizer, word_vocab, label_vocab)
     print("\n".join(results))
     if args.benchmark:
         predictor.autolog.report()
