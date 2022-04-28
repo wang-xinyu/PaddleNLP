@@ -23,7 +23,7 @@ from functools import partial
 import paddle
 from paddle import inference
 from paddle.io import DataLoader
-from paddlenlp.datasets import load_dataset
+from datasets import load_dataset
 from paddlenlp.data import Pad, Stack, Dict
 from paddlenlp.metrics.squad import squad_evaluate, compute_prediction
 
@@ -124,6 +124,7 @@ def main():
                               batched=True,
                               remove_columns=column_names,
                               num_proc=4)
+
     batchify_fn = lambda samples, fn=Dict(
         {
             "input_ids": Pad(axis=0, pad_val=tokenizer.pad_token_id),
