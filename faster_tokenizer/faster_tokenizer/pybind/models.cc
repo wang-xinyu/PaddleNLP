@@ -222,7 +222,8 @@ void BindModels(pybind11::module* m) {
       .def("get_vocab", &models::Model::GetVocab)
       .def("get_vocab_size", &models::Model::GetVocabSize)
       .def("save", &models::Model::Save);
-  py::class_<models::WordPiece, PyWordPiece>(submodule, "WordPiece")
+  py::class_<models::WordPiece, models::Model, PyWordPiece>(submodule,
+                                                            "WordPiece")
       .def(py::init<>())
       .def(py::init<const core::Vocab&,
                     const std::string&,
@@ -259,8 +260,8 @@ void BindModels(pybind11::module* m) {
            },
            py::arg("folder"),
            py::arg("prefix") = py::none());
-  py::class_<models::FasterWordPiece, PyFasterWordPiece>(submodule,
-                                                         "FasterWordPiece")
+  py::class_<models::FasterWordPiece, models::Model, PyFasterWordPiece>(
+      submodule, "FasterWordPiece")
       .def(py::init<>())
       .def(py::init<const core::Vocab&,
                     const std::string&,
@@ -298,7 +299,7 @@ void BindModels(pybind11::module* m) {
            },
            py::arg("folder"),
            py::arg("prefix") = py::none());
-  py::class_<models::BPE, PyBPE>(submodule, "BPE")
+  py::class_<models::BPE, models::Model, PyBPE>(submodule, "BPE")
       .def(py::init([](const py::object& py_vocab,
                        const py::object& py_merges,
                        const py::object& py_cache_capacity,
@@ -455,7 +456,7 @@ void BindModels(pybind11::module* m) {
           },
           py::arg("vocab"),
           py::arg("merges"));
-  py::class_<models::Unigram, PyUnigram>(submodule, "Unigram")
+  py::class_<models::Unigram, models::Model, PyUnigram>(submodule, "Unigram")
       .def(py::init([](const py::object& py_vocab_list,
                        const py::object& py_unk_token_id) {
              if (py_vocab_list.is(py::none()) &&

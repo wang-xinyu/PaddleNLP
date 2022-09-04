@@ -55,7 +55,8 @@ void BindDecoders(pybind11::module* m) {
            },
            py::arg("tokens"));
 
-  py::class_<decoders::WordPiece, PyWordPieceDecoder>(submodule, "WordPiece")
+  py::class_<decoders::WordPiece, decoders::Decoder, PyWordPieceDecoder>(
+      submodule, "WordPiece")
       .def(py::init<std::string, bool>(),
            py::arg("prefix") = "##",
            py::arg("cleanup") = true)

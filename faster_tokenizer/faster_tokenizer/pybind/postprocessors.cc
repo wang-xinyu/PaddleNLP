@@ -15,9 +15,9 @@ limitations under the License. */
 #include "faster_tokenizer/postprocessors/postprocessors.h"
 #include <Python.h>
 #include "faster_tokenizer/core/encoding.h"
-#include "glog/logging.h"
 #include "faster_tokenizer/pybind/postprocessors.h"
 #include "faster_tokenizer/pybind/utils.h"
+#include "glog/logging.h"
 
 namespace py = pybind11;
 
@@ -123,8 +123,9 @@ void BindPostProcessors(pybind11::module* m) {
            py::arg("encoding"),
            py::arg("pair_encoding"),
            py::arg("add_special_tokens"));
-  py::class_<postprocessors::BertPostProcessor, PyBertPostProcessor>(
-      submodule, "BertPostProcessor")
+  py::class_<postprocessors::BertPostProcessor,
+             postprocessors::PostProcessor,
+             PyBertPostProcessor>(submodule, "BertPostProcessor")
       .def(py::init<>())
       .def(py::init<const std::pair<std::string, uint32_t>&,
                     const std::pair<std::string, uint32_t>&>(),
@@ -167,8 +168,9 @@ void BindPostProcessors(pybind11::module* m) {
       .def(py::init<const std::vector<postprocessors::TemplatePiece>&>(),
            py::arg("pieces"));
 
-  py::class_<postprocessors::TemplatePostProcessor, PyTemplatePostProcessor>(
-      submodule, "TemplatePostProcessor")
+  py::class_<postprocessors::TemplatePostProcessor,
+             postprocessors::PostProcessor,
+             PyTemplatePostProcessor>(submodule, "TemplatePostProcessor")
       .def(
           py::init([](const py::object& single_obj,
                       const py::object& pair_obj,

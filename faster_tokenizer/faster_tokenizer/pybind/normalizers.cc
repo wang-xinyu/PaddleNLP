@@ -169,8 +169,9 @@ void BindNormalizers(pybind11::module* m) {
            },
            py::arg("sequence"))
       .def("__call__", &normalizers::Normalizer::operator());
-  py::class_<normalizers::BertNormalizer, PyBertNormalizer>(submodule,
-                                                            "BertNormalizer")
+  py::class_<normalizers::BertNormalizer,
+             normalizers::Normalizer,
+             PyBertNormalizer>(submodule, "BertNormalizer")
       .def(py::init<bool, bool, bool, bool>(),
            py::arg("clean_text") = true,
            py::arg("handle_chinese_chars") = true,
@@ -207,8 +208,9 @@ void BindNormalizers(pybind11::module* m) {
         return j.dump();
       });
 
-  py::class_<normalizers::ReplaceNormalizer, PyReplaceNormalizer>(
-      submodule, "ReplaceNormalizer")
+  py::class_<normalizers::ReplaceNormalizer,
+             normalizers::Normalizer,
+             PyReplaceNormalizer>(submodule, "ReplaceNormalizer")
       .def(py::init<const normalizers::ReplaceNormalizer&>(),
            py::arg("replace_normalizer"))
       .def(py::init<const std::string&, const std::string&>(),
@@ -228,8 +230,9 @@ void BindNormalizers(pybind11::module* m) {
         return j.dump();
       });
 
-  py::class_<normalizers::StripNormalizer, PyStripNormalizer>(submodule,
-                                                              "StripNormalizer")
+  py::class_<normalizers::StripNormalizer,
+             normalizers::Normalizer,
+             PyStripNormalizer>(submodule, "StripNormalizer")
       .def(py::init<bool, bool>(),
            py::arg("left") = true,
            py::arg("right") = true)
@@ -246,8 +249,9 @@ void BindNormalizers(pybind11::module* m) {
         nlohmann::json j = self;
         return j.dump();
       });
-  py::class_<normalizers::StripAccentsNormalizer, PyStripAccentsNormalizer>(
-      submodule, "StripAccentsNormalizer")
+  py::class_<normalizers::StripAccentsNormalizer,
+             normalizers::Normalizer,
+             PyStripAccentsNormalizer>(submodule, "StripAccentsNormalizer")
       .def(py::init<>())
       .def("normalize_str",
            [](const normalizers::StripAccentsNormalizer& self,
@@ -262,8 +266,9 @@ void BindNormalizers(pybind11::module* m) {
         nlohmann::json j = self;
         return j.dump();
       });
-  py::class_<normalizers::NFCNormalizer, PyNFCNormalizer>(submodule,
-                                                          "NFCNormalizer")
+  py::class_<normalizers::NFCNormalizer,
+             normalizers::Normalizer,
+             PyNFCNormalizer>(submodule, "NFCNormalizer")
       .def(py::init<>())
       .def("normalize_str",
            [](const normalizers::NFCNormalizer& self, const std::string& str) {
@@ -277,8 +282,9 @@ void BindNormalizers(pybind11::module* m) {
         nlohmann::json j = self;
         return j.dump();
       });
-  py::class_<normalizers::NFDNormalizer, PyNFDNormalizer>(submodule,
-                                                          "NFDNormalizer")
+  py::class_<normalizers::NFDNormalizer,
+             normalizers::Normalizer,
+             PyNFDNormalizer>(submodule, "NFDNormalizer")
       .def(py::init<>())
       .def("normalize_str",
            [](const normalizers::NFDNormalizer& self, const std::string& str) {
@@ -292,8 +298,9 @@ void BindNormalizers(pybind11::module* m) {
         nlohmann::json j = self;
         return j.dump();
       });
-  py::class_<normalizers::NFKCNormalizer, PyNFKCNormalizer>(submodule,
-                                                            "NFKCNormalizer")
+  py::class_<normalizers::NFKCNormalizer,
+             normalizers::Normalizer,
+             PyNFKCNormalizer>(submodule, "NFKCNormalizer")
       .def(py::init<>())
       .def("normalize_str",
            [](const normalizers::NFKCNormalizer& self, const std::string& str) {
@@ -307,8 +314,9 @@ void BindNormalizers(pybind11::module* m) {
         nlohmann::json j = self;
         return j.dump();
       });
-  py::class_<normalizers::NFKDNormalizer, PyNFKDNormalizer>(submodule,
-                                                            "NFKDNormalizer")
+  py::class_<normalizers::NFKDNormalizer,
+             normalizers::Normalizer,
+             PyNFKDNormalizer>(submodule, "NFKDNormalizer")
       .def(py::init<>())
       .def("normalize_str",
            [](const normalizers::NFKDNormalizer& self, const std::string& str) {
@@ -322,8 +330,9 @@ void BindNormalizers(pybind11::module* m) {
         nlohmann::json j = self;
         return j.dump();
       });
-  py::class_<normalizers::NmtNormalizer, PyNmtNormalizer>(submodule,
-                                                          "NmtNormalizer")
+  py::class_<normalizers::NmtNormalizer,
+             normalizers::Normalizer,
+             PyNmtNormalizer>(submodule, "NmtNormalizer")
       .def(py::init<>())
       .def("normalize_str",
            [](const normalizers::NmtNormalizer& self, const std::string& str) {
@@ -337,8 +346,9 @@ void BindNormalizers(pybind11::module* m) {
         nlohmann::json j = self;
         return j.dump();
       });
-  py::class_<normalizers::LowercaseNormalizer, PyLowercaseNormalizer>(
-      submodule, "LowercaseNormalizer")
+  py::class_<normalizers::LowercaseNormalizer,
+             normalizers::Normalizer,
+             PyLowercaseNormalizer>(submodule, "LowercaseNormalizer")
       .def(py::init<>())
       .def("normalize_str",
            [](const normalizers::LowercaseNormalizer& self,
@@ -353,8 +363,9 @@ void BindNormalizers(pybind11::module* m) {
         nlohmann::json j = self;
         return j.dump();
       });
-  py::class_<normalizers::SequenceNormalizer, PySequenceNormalizer>(
-      submodule, "SequenceNormalizer")
+  py::class_<normalizers::SequenceNormalizer,
+             normalizers::Normalizer,
+             PySequenceNormalizer>(submodule, "SequenceNormalizer")
       .def(
           py::init([](const py::list& py_list) {
             normalizers::Normalizer* normalizer_ptr;
@@ -442,8 +453,9 @@ void BindNormalizers(pybind11::module* m) {
         nlohmann::json j = self;
         return j.dump();
       });
-  py::class_<normalizers::PrecompiledNormalizer, PyPrecompiledNormalizer>(
-      submodule, "PrecompiledNormalizer")
+  py::class_<normalizers::PrecompiledNormalizer,
+             normalizers::Normalizer,
+             PyPrecompiledNormalizer>(submodule, "PrecompiledNormalizer")
       .def(py::init<>())
       .def(py::init<const std::string&>(), py::arg("precompiled_charsmap"))
       .def("normalize_str",

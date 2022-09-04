@@ -110,22 +110,26 @@ void BindPreTokenizers(pybind11::module* m) {
                                                           "PreTokenizer")
       .def(py::init<>())
       .def("__call__", &pretokenizers::PreTokenizer::operator());
-  py::class_<pretokenizers::WhitespacePreTokenizer, PyWhitespacePreTokenizer>(
-      sub_module, "WhitespacePreTokenizer")
+  py::class_<pretokenizers::WhitespacePreTokenizer,
+             pretokenizers::PreTokenizer,
+             PyWhitespacePreTokenizer>(sub_module, "WhitespacePreTokenizer")
       .def(py::init<>())
       .def("__call__", &pretokenizers::WhitespacePreTokenizer::operator());
-  py::class_<pretokenizers::BertPreTokenizer, PyBertPreTokenizer>(
-      sub_module, "BertPreTokenizer")
+  py::class_<pretokenizers::BertPreTokenizer,
+             pretokenizers::PreTokenizer,
+             PyBertPreTokenizer>(sub_module, "BertPreTokenizer")
       .def(py::init<>())
       .def("__call__", &pretokenizers::BertPreTokenizer::operator());
-  py::class_<pretokenizers::MetaSpacePreTokenizer, PyMetaSpacePreTokenizer>(
-      sub_module, "MetaSpacePreTokenizer")
+  py::class_<pretokenizers::MetaSpacePreTokenizer,
+             pretokenizers::PreTokenizer,
+             PyMetaSpacePreTokenizer>(sub_module, "MetaSpacePreTokenizer")
       .def(py::init<const std::string&, bool>(),
            py::arg("replacement") = "_",
            py::arg("add_prefix_space") = true)
       .def("__call__", &pretokenizers::MetaSpacePreTokenizer::operator());
-  py::class_<pretokenizers::SequencePreTokenizer, PySequencePreTokenizer>(
-      sub_module, "SequencePreTokenizer")
+  py::class_<pretokenizers::SequencePreTokenizer,
+             pretokenizers::PreTokenizer,
+             PySequencePreTokenizer>(sub_module, "SequencePreTokenizer")
       .def(py::init([](const py::list& py_list) {
              pretokenizers::PreTokenizer* pretokenizer_ptr;
              std::vector<pretokenizers::PreTokenizer*> pretokenizers;
