@@ -102,7 +102,7 @@ endforeach()
 
 ELSE(WIN32)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fPIC")
-    IF (LINUX)
+    IF (NOT APPLE)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ldl -lpthread")
     ENDIF()
     set (PUBLIC_DEPEND_LIBS ${CMAKE_DL_LIBS})
@@ -110,7 +110,7 @@ ENDIF(WIN32)
 
 # For OpenMP
 # openmp not support well for now on windows
-if (LINUX)
+if (NOT APPLE AND NOT WIN32) # Linux
     find_package(OpenMP)
     if (OPENMP_FOUND)
         add_definitions(-DWITH_OMP)
@@ -143,7 +143,7 @@ if(WITH_PYTHON)
 
 add_subdirectory(python)
 
-if(LINUX)
+if (NOT APPLE AND NOT WIN32) # Linux
 add_custom_target(build_tokenizers_bdist_wheel ALL
     COMMAND ${PYTHON_EXECUTABLE} setup.py bdist_wheel --plat-name=manylinux1_x86_64
     COMMENT "Packing whl packages------>>>"

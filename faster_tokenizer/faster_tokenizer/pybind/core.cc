@@ -70,24 +70,6 @@ void BindCore(pybind11::module* m) {
       .def_readwrite("strategy", &core::TruncMethod::strategy_)
       .def_readwrite("stride", &core::TruncMethod::stride_);
 
-  py::enum_<core::OffsetType>(*m, "OffsetType")
-      .value("CHAR", core::OffsetType::CHAR)
-      .value("BYTE", core::OffsetType::BYTE)
-      .export_values();
-  py::enum_<core::Direction>(*m, "Direction")
-      .value("LEFT", core::Direction::LEFT)
-      .value("RIGHT", core::Direction::RIGHT)
-      .export_values();
-  py::enum_<core::TruncStrategy>(*m, "TruncStrategy")
-      .value("LONGEST_FIRST", core::TruncStrategy::LONGEST_FIRST)
-      .value("ONLY_FIRST", core::TruncStrategy::ONLY_FIRST)
-      .value("ONLY_SECOND", core::TruncStrategy::ONLY_SECOND)
-      .export_values();
-  py::enum_<core::PadStrategy>(*m, "PadStrategy")
-      .value("BATCH_LONGEST", core::PadStrategy::BATCH_LONGEST)
-      .value("FIXED_SIZE", core::PadStrategy::FIXED_SIZE)
-      .export_values();
-
   py::class_<core::Encoding>(*m, "Encoding")
       .def(py::init<const std::vector<uint32_t>&,
                     const std::vector<uint32_t>&,
