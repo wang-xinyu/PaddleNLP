@@ -78,8 +78,8 @@ def pyi_file(obj, indent=""):
         fns = inspect.getmembers(obj, fn_predicate)
 
         # Init
-        if obj.__text_signature__:
-            body += f"{indent}def __init__{obj.__text_signature__}:\n"
+        if obj.__init__.__doc__ and obj.__init__.__doc__.startswith("__init__"):
+            body += f"{indent}def {obj.__init__.__doc__}"
             body += f"{indent+INDENT}pass\n"
             body += "\n"
 
@@ -124,10 +124,11 @@ def do_black(content, is_pyi):
     mode = black.Mode(
         target_versions={black.TargetVersion.PY36},
         line_length=100,
-        is_pyi=is_pyi,
+        is_pyi=True,
         string_normalization=True,
         experimental_string_processing=False,
     )
+    print(f"content = {content}")
     try:
         return black.format_file_contents(content, fast=True, mode=mode)
     except black.NothingChanged:
