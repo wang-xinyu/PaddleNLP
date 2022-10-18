@@ -54,7 +54,6 @@ TOKENIZER_MAPPING_NAMES = OrderedDict([
     ("LayoutLMTokenizer", "layoutlm"),
     ("LukeTokenizer", "luke"),
     ("MBartTokenizer", "mbart"),
-    ("MBart50Tokenizer", "mbart"),
     ("MegatronBertTokenizer", "megatronbert"),
     ("MobileBertTokenizer", "mobilebert"),
     ("MPNetTokenizer", "mpnet"),
