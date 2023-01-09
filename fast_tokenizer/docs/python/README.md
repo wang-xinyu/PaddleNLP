@@ -12,5 +12,13 @@
 ### 安装
 
 ```shell
-pip install --upgrade fast_tokenizer
+pip install --upgrade fast-tokenizer-python
 ```
+
+## 2. 快速开始
+
+目前FastTokenizer提供了以下Python使用示例。
+
+[ErnieFastTokenizer Python示例](../../examples/ernie/python)
+
+[ClipFastTokenizer Python示例](../../examples/clip/python)
